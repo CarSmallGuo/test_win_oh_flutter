@@ -80,12 +80,20 @@ jobs:
             throw "Probe executable was not found."
           }
 
-          Push-Location $exe.DirectoryName
-          & $exe.FullName
-          $exitCode = $LASTEXITCODE
-          Pop-Location
-
           $resultPath = Join-Path $exe.DirectoryName "probe_result.txt"
+          Remove-Item $resultPath -ErrorAction SilentlyContinue
+
+          $process = Start-Process -FilePath $exe.FullName -WorkingDirectory $exe.DirectoryName -PassThru
+          $deadline = (Get-Date).AddSeconds(60)
+          while (-not (Test-Path $resultPath) -and -not $process.HasExited -and (Get-Date) -lt $deadline) {
+            Start-Sleep -Milliseconds 500
+            $process.Refresh()
+          }
+
+          if (-not $process.HasExited) {
+            Stop-Process -Id $process.Id -Force
+          }
+
           if (Test-Path $resultPath) {
             Copy-Item $resultPath "${{ github.workspace }}/probe_result.txt" -Force
             Get-Content "${{ github.workspace }}/probe_result.txt"
@@ -93,8 +101,9 @@ jobs:
             "status=missing-result" | Out-File "${{ github.workspace }}/probe_result.txt"
           }
 
-          if ($exitCode -ne 0) {
-            throw "Probe exited with code $exitCode."
+          $status = Select-String -Path "${{ github.workspace }}/probe_result.txt" -Pattern '^status=' | Select-Object -First 1
+          if ($null -eq $status -or $status.Line -ne 'status=ok') {
+            throw "Probe did not complete successfully."
           }
 
       - name: Upload probe result
