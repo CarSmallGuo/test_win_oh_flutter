@@ -73,6 +73,7 @@ jobs:
       - name: Run probe exe
         id: run-probe
         shell: pwsh
+        working-directory: ${{ github.workspace }}/probe_app
         run: |
           $exe = Get-ChildItem -Path "build/windows" -Recurse -Filter "win_oh_flutter_probe.exe" | Select-Object -First 1
           if ($null -eq $exe) {
@@ -101,4 +102,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-ohos-platform-isohos-result
-          path: probe_result.txt
+          path: ${{ github.workspace }}/probe_result.txt
