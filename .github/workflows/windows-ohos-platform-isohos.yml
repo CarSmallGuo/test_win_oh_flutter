@@ -1,0 +1,88 @@
+name: Windows OHOS Platform.isOhos Probe
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  windows-probe:
+    name: Probe Windows runtime
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    env:
+      FLUTTER_STORAGE_BASE_URL: https://storage.flutter-io.cn
+      PUB_HOSTED_URL: https://pub.flutter-io.cn
+
+    steps:
+      - name: Checkout probe repo
+        uses: actions/checkout@v4
+
+      - name: Configure git
+        shell: pwsh
+        run: |
+          git config --global core.longpaths true
+
+      - name: Clone OHOS Flutter SDK
+        shell: pwsh
+        run: |
+          git clone --depth 1 --branch oh-3.41.9-dev https://gitcode.com/CPF-Flutter/flutter_flutter.git flutter_ohos
+          "$PWD/flutter_ohos/bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Prime Flutter SDK
+        shell: pwsh
+        run: |
+          flutter --version
+          flutter config --enable-windows-desktop
+          flutter doctor -v
+
+      - name: Create Windows probe app
+        shell: pwsh
+        run: |
+          flutter create --platforms=windows --project-name win_oh_flutter_probe probe_app
+          Copy-Item tools/windows_probe_main.dart probe_app/lib/main.dart -Force
+          Push-Location probe_app
+          flutter pub get
+          Pop-Location
+        working-directory: ${{ github.workspace }}
+
+      - name: Build Windows probe app
+        shell: pwsh
+        run: |
+          flutter build windows --debug
+        working-directory: ${{ github.workspace }}/probe_app
+
+      - name: Run probe exe
+        id: run-probe
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path "build/windows" -Recurse -Filter "win_oh_flutter_probe.exe" | Select-Object -First 1
+          if ($null -eq $exe) {
+            throw "Probe executable was not found."
+          }
+
+          Push-Location $exe.DirectoryName
+          & $exe.FullName
+          $exitCode = $LASTEXITCODE
+          Pop-Location
+
+          $resultPath = Join-Path $exe.DirectoryName "probe_result.txt"
+          if (Test-Path $resultPath) {
+            Copy-Item $resultPath "${{ github.workspace }}/probe_result.txt" -Force
+            Get-Content "${{ github.workspace }}/probe_result.txt"
+          } else {
+            "status=missing-result" | Out-File "${{ github.workspace }}/probe_result.txt"
+          }
+
+          if ($exitCode -ne 0) {
+            throw "Probe exited with code $exitCode."
+          }
+
+      - name: Upload probe result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-ohos-platform-isohos-result
+          path: probe_result.txt
